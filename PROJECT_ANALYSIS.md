@@ -201,3 +201,66 @@ NODE_ENV=development-linux NODE_CONFIG_DIR=../Common/config node sources/server.
 ## 8) 快速结论
 
 这是一个典型“**主服务（协同网关）+ 多子服务（转换/拼写）+ 基础设施共享层**”的 Node.js 后端系统。开发时以 DocService 为观察中心，问题定位按链路分到 FileConverter 或 SpellChecker，再结合 Common 配置与队列/存储排查。
+
+
+---
+
+## 9) 有没有调用外部服务？在哪里、如何调用？
+
+有，而且不少。可以分成“基础设施类外部服务”和“业务集成类外部服务”。
+
+### 9.1 基础设施类
+
+1) **数据库（PostgreSQL/MySQL/MSSQL/Oracle/Dameng）**
+- 在 `DocService/sources/databaseConnectors/*` 中连接。
+- 例如 PostgreSQL 通过 `pg.Pool(connectionConfig)` 建连接池，连接信息来自 `services.CoAuthoring.sql` 配置（host/port/user/password/dbName）。
+- 调用方式：在各 connector 的 `sqlQuery` 中执行 SQL。
+
+2) **消息队列（RabbitMQ / ActiveMQ）**
+- 在 `Common/sources/taskqueueRabbitMQ.js` 中统一接入。
+- 调用方式：
+  - RabbitMQ：`rabbitMQCore.connetPromise` + `assertQueue` + `consume` + `ack`
+  - ActiveMQ：`activeMQCore.connetPromise` + `openSender/openReceiver`
+- 作用：DocService 与 FileConverter 之间的异步任务流转。
+
+3) **对象存储（S3 / Azure Blob）**
+- S3 在 `Common/sources/storage/storage-s3.js`，Azure 在 `Common/sources/storage/storage-az.js`。
+- 调用方式：
+  - S3：AWS SDK 的 `S3Client` + `GetObject/PutObject/CopyObject/...`
+  - Azure：`BlobServiceClient` + `download/upload/syncCopyFromURL/...`
+
+4) **SMTP 邮件服务**
+- 在 `Common/sources/mailService.js`。
+- 调用方式：`nodemailer.createTransport(...)` 创建 transporter，`sendMail(...)` 发信。
+
+5) **Redis**
+- 配置在 `services.CoAuthoring.redis`，用于编辑状态/统计等（由 editorData/editorStat 等模块使用）。
+
+### 9.2 业务集成类
+
+1) **外部 HTTP/HTTPS 服务（通用调用）**
+- 在 `Common/sources/utils.js` 中通过 `axios` 统一发起 GET/POST/任意方法请求。
+- 调用方式：`downloadUrlPromise` / `postRequestPromise` / `httpRequest`。
+- 安全控制：
+  - 受 `externalRequest.action`、`externalRequest.directIfIn` 配置控制。
+  - 可开启私网地址拦截（`request-filtering-agent`），也可配置代理 `proxyUrl`/`proxyUser`/`proxyHeaders`。
+
+2) **WOPI Host 生态**
+- 在 `DocService/sources/server.js` 暴露 WOPI 相关路由，具体逻辑在 `DocService/sources/wopiClient.js`。
+- 通过 `utils` 的 HTTP 能力与外部 WOPI 主机做文件信息、内容读写、锁等交互（并有 `wopi.*` 配置控制）。
+
+3) **AI 代理（可选）**
+- 在 `DocService/sources/server.js` 通过 `/ai-proxy` 路由接入 `aiProxyHandler.proxyRequest`。
+- 是否真正调用外部 AI Provider，取决于 `aiSettings` 与代理配置。
+
+4) **PDF 云签名服务（可选）**
+- 在 `FileConverter/sources/converter.js` 中，若开启配置会调用：
+  - AWS KMS（`signPdfFileKms`）
+  - CSC 服务（`signPdfFileCsc`）
+- 触发条件由 `FileConverter.converter.signing.awsKms` 或 `...signing.csc` 配置决定。
+
+### 9.3 结论（直接回答你的问题）
+
+- **有调用外部服务。**
+- **在哪里调用：**主要集中在 `Common/sources/utils.js`（通用 HTTP）、`Common/sources/storage/*`（云存储）、`Common/sources/taskqueueRabbitMQ.js`（MQ）、`Common/sources/mailService.js`（SMTP）、`DocService/sources/wopiClient.js`（WOPI 集成）、`FileConverter/sources/converter.js`（KMS/CSC）。
+- **如何调用：**通过统一配置 + SDK/HTTP 客户端（axios、AWS SDK、Azure SDK、nodemailer、AMQP 客户端）实现，并受安全配置（私网拦截、代理、token/header）约束。
