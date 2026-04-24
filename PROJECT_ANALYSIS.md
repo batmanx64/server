@@ -264,3 +264,43 @@ NODE_ENV=development-linux NODE_CONFIG_DIR=../Common/config node sources/server.
 - **有调用外部服务。**
 - **在哪里调用：**主要集中在 `Common/sources/utils.js`（通用 HTTP）、`Common/sources/storage/*`（云存储）、`Common/sources/taskqueueRabbitMQ.js`（MQ）、`Common/sources/mailService.js`（SMTP）、`DocService/sources/wopiClient.js`（WOPI 集成）、`FileConverter/sources/converter.js`（KMS/CSC）。
 - **如何调用：**通过统一配置 + SDK/HTTP 客户端（axios、AWS SDK、Azure SDK、nodemailer、AMQP 客户端）实现，并受安全配置（私网拦截、代理、token/header）约束。
+
+
+---
+
+## 10) 是否通过 License 做并发限制？有，且有两层
+
+你问的这个点是对的：代码里确实有基于 license 的并发/容量限制逻辑，主要在 **DocService 鉴权层** 和 **FileConverter worker 数量层**。
+
+### 10.1 DocService：编辑/查看并发与用户数限制（强相关）
+
+位置：`DocService/sources/DocsCoServer.js`
+
+- 在用户连接鉴权流程中调用 `_checkLicenseAuth(...)`，用于判断当前连接是否还能进入编辑/LiveViewer。  
+- `_checkLicenseAuth` 内部按 license 规则做两类限制：
+  1. **按用户数限制**（`usersCount` / `usersViewCount`）
+  2. **按连接数限制**（`connections` / `connectionsView`）
+- 达到上限时，会把 license 结果改成对应限制码（如 `UsersCount` / `Connections` 等），后续会将连接降级或拒绝编辑能力。
+- 还会根据 `license.warning_limit_percents` 做阈值告警通知（接近上限时报警）。
+
+可定位代码片段：
+- 鉴权调用：`_checkLicenseAuth(...)` 在 auth 过程中执行
+- 限制实现：`_checkLicenseAuth` 中对 users/connections 的比较与分支
+
+### 10.2 FileConverter：按 license 限制 worker 并发（进程并行度）
+
+位置：`FileConverter/sources/convertermaster.js`
+
+- master 进程读取 license 后，worker 数按 `min(licenseInfo.count, CPU*maxprocesscount)` 计算。
+- 这意味着即使机器 CPU 很多，也会被 license 里的 count 上限卡住。
+- license 文件变化会触发 `updateLicense()`，随后动态增减 worker。
+
+### 10.3 相关配置入口（辅助定位）
+
+- `Common/config/default.json` 中可以看到许可证告警阈值配置：`license.warning_limit_percents`
+- `DocsCoServer.js` 会读取这个阈值并触发 `notification` 模板告警。
+
+### 10.4 一句话总结
+
+- **有并发限制**，而且是“编辑/查看会话并发限制 + 转换 worker 并发限制”双路径。  
+- 如果你要排查“为什么超并发后有人变只读/连不上、或者转换吞吐上不去”，优先看这两个位置。
