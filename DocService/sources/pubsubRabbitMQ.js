@@ -31,6 +31,11 @@
  */
 
 'use strict';
+// === [ARCHITECTURE] 设计模式: Pub/Sub — 跨进程协作事件广播
+// 多 DocService 实例间广播协同事件 (changes, force-save, meta)
+// 使用 RabbitMQ fanout exchange 或 ActiveMQ topic
+// 实现: RabbitMQ (amqplib) / ActiveMQ (rhea) 双实现
+
 const config = require('config');
 const events = require('events');
 const util = require('util');

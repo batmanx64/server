@@ -31,6 +31,11 @@
  */
 
 'use strict';
+// === [ARCHITECTURE] RabbitMQ 底层连接管理
+// 被 taskqueueRabbitMQ.js 和 pubsubRabbitMQ.js 共用
+// 职责: 连接管理、自动重连、Channel 池化、Queue/Exchange 断言
+// 使用 amqplib (AMQP 0-9-1)
+
 const config = require('config');
 const amqp = require('amqplib/callback_api');
 const operationContext = require('./operationContext');

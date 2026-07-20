@@ -32,6 +32,10 @@
 
 'use strict';
 
+// === [ARCHITECTURE] Strategy 实现: 本地文件系统存储
+// 实现 storage-base.js 定义的统一接口
+// 文件路径: <folderPath>/<cacheFolderName>/<tenant>/<path>
+
 const {cp, rm, mkdir} = require('fs/promises');
 const {stat, readFile, writeFile} = require('fs/promises');
 const path = require('path');

@@ -32,6 +32,12 @@
 
 'use strict';
 
+// === [ARCHITECTURE] 微服务: SpellChecker — 拼写检查
+// 独立进程, 使用 Cluster Master-Worker 模式 (同 FileConverter)
+// 使用 Express + SockJS (非 Socket.IO) 提供拼写建议
+// Nodehun (Hunspell Node.js 绑定) 实现字典查询
+// Master 定时发送 test word 做健康检查, 失败则重启 Worker
+
 const cluster = require('cluster');
 const config = require('config').get('SpellChecker');
 

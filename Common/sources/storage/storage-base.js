@@ -31,6 +31,14 @@
  */
 
 'use strict';
+// === [ARCHITECTURE] 设计模式: Strategy 模式 — 存储抽象层
+// 统一接口: getObject / putObject / deleteObject / copyObject / getSignedUrl
+// 运行时根据 config.storage.name 选择:
+//   - storage-fs  (本地文件系统)
+//   - storage-s3  (AWS S3 / S3-compatible)
+//   - storage-az  (Azure Blob Storage)
+// 支持 cache 和 persistentStorage 双存储分离
+
 const os = require('os');
 const cluster = require('cluster');
 const path = require('path');
@@ -60,6 +68,7 @@ function getStoragePath(ctx, strPath, opt_specialDir) {
   opt_specialDir = opt_specialDir || cfgCacheStorage.cacheFolderName;
   return opt_specialDir + '/' + tenantManager.getTenantPathPrefix(ctx) + strPath.replace(/\\/g, '/');
 }
+// === [ARCHITECTURE] Strategy 选择器: 根据配置名路由到具体存储实现
 function getStorage(storageCfg) {
   switch (storageCfg.name) {
     case 'storage-s3':

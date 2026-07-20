@@ -32,6 +32,11 @@
 
 'use strict';
 
+// === [ARCHITECTURE] 设计模式: Context 对象模式
+// 每个请求/连接创建一个 Context，贯穿整个调用链
+// 携带: tenant, docId, userId, shardKey, wopiSrc, userSessionId
+// 所有下游操作 (存储/数据库/队列) 都通过 Context 获取作用域信息
+
 const utils = require('./utils');
 const logger = require('./logger');
 const constants = require('./constants');

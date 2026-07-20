@@ -32,6 +32,12 @@
 
 'use strict';
 
+// === [ARCHITECTURE] 设计模式: Strategy + Factory 模式 — 数据库连接器
+// 根据 config.services.CoAuthoring.sql.type 工厂选择:
+//   mysql / mariadb / mssql / postgres / oracle / dameng
+// 无 ORM — 全部使用原始 SQL 以获得最大性能
+// 使用 bottleneck 限流防止并发写入过载
+
 const sqlDataBaseType = {
   mySql: 'mysql',
   mariaDB: 'mariadb',
@@ -53,10 +59,15 @@ const maxPacketSize = configSql.get('max_allowed_packet'); // The default size f
 const cfgBottleneckGetChanges = config.util.cloneDeep(config.get('bottleneck.getChanges'));
 const dbType = configSql.get('type');
 
+// === [ARCHITECTURE] 限流: bottleneck — 防止数据库写入过载
+// getChanges 操作按 (tenant, docId) 分组限流
+// reservoir 机制: 每次读取 chagnes 后扣减 reservoir, 避免大量并发查询
 const reservoirMaximum = cfgBottleneckGetChanges.reservoirIncreaseMaximum || cfgBottleneckGetChanges.reservoirRefreshAmount;
 const group = new bottleneck.Group(cfgBottleneckGetChanges);
+// === [ARCHITECTURE] 临界区: 同一文档的 deleteChanges 串行化
 const g_oCriticalSection = {};
 
+// === [ARCHITECTURE] Factory: 根据配置加载对应的数据库连接器
 let dbInstance;
 switch (dbType) {
   case sqlDataBaseType.mySql:

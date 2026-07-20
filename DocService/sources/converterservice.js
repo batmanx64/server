@@ -32,6 +32,12 @@
 
 'use strict';
 
+// === [ARCHITECTURE] 文档格式转换编排服务
+// 接收 HTTP 请求 -> 通过 taskqueueRabbitMQ 提交任务 -> FileConverter Worker 消费
+// /ConvertService.ashx (XML), /converter (JSON), /lool/convert-to (Collabora), /cool/convert-to (Nextcloud)
+// /docbuilder — 文档生成 API
+// 转换流程: 下载源文件 -> x2t/docbuilder 转换 -> 上传结果 -> 回调
+
 const path = require('path');
 const config = require('config');
 const co = require('co');

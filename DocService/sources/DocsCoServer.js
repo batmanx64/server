@@ -103,6 +103,10 @@ const tenantManager = require('./../../Common/sources/tenantManager');
 const {notificationTypes, ...notificationService} = require('../../Common/sources/notificationService');
 const aiProxyHandler = require('./ai/aiProxyHandler');
 
+// === [ARCHITECTURE] 设计模式: Strategy 模式 — 编辑器数据存储
+// 根据配置选择: editorDataMemory.js (内存) 或 Redis (ioredis)
+// 存储: 用户在线状态, Force-Save 状态, 连接计数
+// 替换方法: 修改 services.CoAuthoring.server.editorDataStorage 配置
 const cfgEditorDataStorage = config.get('services.CoAuthoring.server.editorDataStorage');
 const cfgEditorStatStorage = config.get('services.CoAuthoring.server.editorStatStorage');
 const editorDataStorage = require('./' + cfgEditorDataStorage);
@@ -172,6 +176,9 @@ if (process.env.REDIS_SERVER_DB_KEYS_NUM) {
 const clientStatsD = statsDClient.getClient();
 let connections = []; // Active connections
 const lockDocumentsTimerId = {}; //to drop connection that can't unlockDocument
+// === [ARCHITECTURE] 跨进程通信: Pub/Sub 和任务队列
+// pubsub: RabbitMQ fanout exchange — 跨 DocService 实例广播协同事件
+// queue: RabbitMQ 任务队列 — 向 FileConverter Worker 提交转换任务
 let pubsub;
 let queue;
 let shutdownFlag = false;
@@ -1826,9 +1833,20 @@ async function encryptPasswordParams(ctx, data) {
 }
 exports.encryptPasswordParams = encryptPasswordParams;
 exports.getOpenFormatByEditor = getOpenFormatByEditor;
+// === [ARCHITECTURE] Socket.IO 协同引擎入口
+// 职责:
+//   1. 管理每个文档的 Socket.IO room (/doc/<docid>/c<channel>)
+//   2. 用户在线状态跟踪 (editor/viewer/liveViewer)
+//   3. 协同变更广播 (changes/cursor/meta/message)
+//   4. 文档锁定 (c_oAscLockTypes) 和 Force-Save 编排
+//   5. 许可连接数限制
+//   6. WOPI 集成
+// 数据流: Browser <-> Socket.IO <-> DocService <-> RabbitMQ <-> FileConverter
 exports.install = function (server, app, callbackFunction) {
   const io = new Server(server, cfgSocketIoConnection);
 
+  // === [ARCHITECTURE] JWT 认证中间件 — WebSocket 连接验证
+  // 使用三把密钥之一: session/browser token
   io.use((socket, next) => {
     co(function* () {
       const ctx = new operationContext.Context();

@@ -32,6 +32,12 @@
 
 'use strict';
 
+// === [ARCHITECTURE] 设计模式: 多租户 — 子域名隔离
+// 每个租户有独立目录: <baseDir>/<tenant>/
+// 每个目录包含: config.json, secret.key, license.lic
+// 租户解析: <tenant>.basedomain.com -> tenant 目录
+// Context 对象携带 tenant -> 所有操作按 tenant 隔离
+
 const config = require('config');
 const co = require('co');
 const NodeCache = require('node-cache');

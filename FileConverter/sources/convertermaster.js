@@ -32,6 +32,11 @@
 
 'use strict';
 
+// === [ARCHITECTURE] 设计模式: Cluster Master-Worker — FileConverter
+// Master: 读取许可确定 Worker 数量, fork/监控/重衍生死掉的 Worker
+// Worker: 消费 RabbitMQ 任务队列, 执行 x2t/docbuilder 转换
+// SpellChecker 也使用相同的模式
+
 const cluster = require('cluster');
 const moduleReloader = require('./../../Common/sources/moduleReloader');
 const config = moduleReloader.requireConfigWithRuntime();
@@ -84,6 +89,7 @@ if (cluster.isMaster) {
     }
   };
 
+  // === [ARCHITECTURE] Worker 崩溃自动重启
   cluster.on('exit', (worker, code, signal) => {
     operationContext.global.logger.warn('worker %s died (code = %s; signal = %s).', worker.process.pid, code, signal);
     updateWorkers();

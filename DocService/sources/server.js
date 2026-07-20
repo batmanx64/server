@@ -32,6 +32,10 @@
 
 'use strict';
 
+// === [ARCHITECTURE] 微服务入口: DocService (Express + Socket.IO)
+// 职责: 文档协同编辑核心服务, 处理 HTTP REST + WebSocket 实时通信
+// 是 4 个独立进程中最核心的一个
+
 const moduleReloader = require('./../../Common/sources/moduleReloader');
 const config = moduleReloader.requireConfigWithRuntime();
 //process.env.NODE_ENV = config.get('services.CoAuthoring.server.mode');
@@ -46,21 +50,25 @@ const path = require('path');
 const bodyParser = require('body-parser');
 const multer = require('multer');
 const apicache = require('apicache');
-const docsCoServer = require('./DocsCoServer');
-const canvasService = require('./canvasservice');
-const converterService = require('./converterservice');
-const fileUploaderService = require('./fileuploaderservice');
-const wopiClient = require('./wopiClient');
+// === [ARCHITECTURE] 核心模块引用
+const docsCoServer = require('./DocsCoServer');          // Socket.IO 协同引擎
+const canvasService = require('./canvasservice');        // 文件下载/上传/打印/保存
+const converterService = require('./converterservice');  // 文档格式转换编排
+const fileUploaderService = require('./fileuploaderservice'); // 图片上传
+const wopiClient = require('./wopiClient');              // WOPI 协议集成 (Microsoft Office Online)
 const constants = require('./../../Common/sources/constants');
 const utils = require('./../../Common/sources/utils');
 const commonDefines = require('./../../Common/sources/commondefines');
+// === [ARCHITECTURE] 设计模式: Context 对象模式 — 每个请求携带 tenant/docId/userId
 const operationContext = require('./../../Common/sources/operationContext');
+// === [ARCHITECTURE] 设计模式: 多租户 — 子域名解析 -> 独立目录配置
 const tenantManager = require('./../../Common/sources/tenantManager');
 const staticRouter = require('./routes/static');
 const infoRouter = require('./routes/info');
 const metaRouter = require('./routes/meta');
 const ms = require('ms');
 const aiProxyHandler = require('./ai/aiProxyHandler');
+// === [ARCHITECTURE] 运行时配置热更新 — fs.watch runtime.json
 const runtimeConfigManager = require('./../../Common/sources/runtimeConfigManager');
 
 const cfgWopiEnable = config.get('wopi.enable');
@@ -91,6 +99,7 @@ const cfgDownloadMaxBytes = config.get('FileConverter.converter.maxDownloadBytes
 // 	}
 // }
 
+// === [ARCHITECTURE] Web 框架: Express 4.x — REST API 层
 const app = express();
 app.disable('x-powered-by');
 
@@ -164,7 +173,10 @@ try {
 // If you want to use 'development' and 'production',
 // then with app.settings.env (https://github.com/strongloop/express/issues/936)
 // If error handling is needed, now it's like this https://github.com/expressjs/errorhandler
-docsCoServer.install(server, app, () => {
+  // === [ARCHITECTURE] Socket.IO 挂载 — 实时协同编辑通道
+  // 每个文档对应一个 room: /doc/<docid>/c<channel>
+  // 消息类型: changes, cursor, meta, message, session, forceSave, rpc
+  docsCoServer.install(server, app, () => {
   operationContext.global.logger.info('Start callbackFunction');
 
   server.listen(config.get('services.CoAuthoring.server.port'), () => {
@@ -219,6 +231,10 @@ docsCoServer.install(server, app, () => {
   });
   const urleEcodedParser = bodyParser.urlencoded({extended: false});
   const forms = multer();
+
+  // === [ARCHITECTURE] REST API 路由定义
+  // 认证方式: JWT (三把独立密钥: inbox/outbox/browser)
+  // IP 白名单: utils.checkClientIp 中间件
 
   app.get('/coauthoring/CommandService.ashx', utils.checkClientIp, rawFileParser, docsCoServer.commandFromServer);
   app.post('/coauthoring/CommandService.ashx', utils.checkClientIp, rawFileParser, docsCoServer.commandFromServer);
@@ -348,6 +364,7 @@ docsCoServer.install(server, app, () => {
   app.get('/wopi/files/:docid/contents', apicache.middleware('5 minutes'), checkWopiDummyEnable, wopiClient.dummyGetFile);
   app.post('/wopi/files/:docid/contents', checkWopiDummyEnable, wopiClient.dummyOk);
 
+  // === [ARCHITECTURE] AI 代理 — 转发请求到外部 AI 提供商
   app.use('/ai-proxy', rawFileParser, aiProxyHandler.proxyRequest);
 
   app.post('/dummyCallback', utils.checkClientIp, apicache.middleware('5 minutes'), rawFileParser, (req, res) => {
@@ -492,6 +509,10 @@ process.on('uncaughtException', err => {
     process.exit(1);
   });
 });
+
+// === [ARCHITECTURE] 设计模式: 观察者模式 — 运行时配置热更新
+// fs.watch runtime.json 变化 -> 刷新配置缓存
+// 许可证文件也用 fs.watchFile 监听变化 + 24h 轮询
 
 //Initialize watch here to avoid circular import with operationContext
 runtimeConfigManager.initRuntimeConfigWatcher(operationContext.global).catch(err => {

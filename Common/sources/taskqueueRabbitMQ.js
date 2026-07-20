@@ -31,6 +31,11 @@
  */
 
 'use strict';
+// === [ARCHITECTURE] 设计模式: 任务队列模式 / 策略模式
+// DocService 提交转换任务 -> RabbitMQ/ActiveMQ -> FileConverter Worker 消费
+// 支持: 延迟任务, 优先级, 死信队列, 重试限制
+// 双实现: RabbitMQ (amqplib) / ActiveMQ (rhea/AMQP 1.0) 通过 cfgQueueType 切换
+
 const config = require('config');
 const events = require('events');
 const util = require('util');
@@ -516,6 +521,7 @@ function initSenderActive(sender, senderData) {
   });
 }
 
+// === [ARCHITECTURE] 策略模式: 运行时选择 RabbitMQ 或 ActiveMQ 实现
 let init;
 let addTask;
 let addResponse;
